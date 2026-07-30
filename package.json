@@ -1,0 +1,52 @@
+{
+  "name": "deepseek-monitor",
+  "version": "1.0.0",
+  "description": "DeepSeek API Key 余额监控系统 - Electron 桌面版",
+  "main": "main.js",
+  "scripts": {
+    "start": "node app.js",
+    "electron-dev": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.deepseek.monitor",
+    "productName": "DeepSeek Monitor",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "**/*",
+      "!data/",
+      "!scripts/",
+      "!release/",
+      "!node_modules/nodemon/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "DeepSeek Monitor",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "better-sqlite3": "^11.6.0",
+    "axios": "^1.7.7",
+    "node-schedule": "^2.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  }
+}

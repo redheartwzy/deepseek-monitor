@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DeepSeek Monitor</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#3b82f6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DS Monitor">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{primary:{50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',400:'#60a5fa',500:'#3b82f6',600:'#2563eb'}},fontFamily:{sans:['Inter','system-ui','-apple-system','sans-serif']}}}}
+</script>
+<style>
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; }
+.card { background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); padding: 20px; transition: box-shadow .2s, transform .15s; }
+.card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.chart-wrap { position: relative; height: 100px; width: 100%; }
+.tab-btn { transition: color .15s, border-color .15s; }
+.tab-active { color: #3b82f6; }
+.tab-active::after { content: ''; position: absolute; bottom: 0; left: 20%; right: 20%; height: 2px; background: #3b82f6; border-radius: 1px; }
+.modal-overlay { background: rgba(15,23,42,0.5); backdrop-filter: blur(4px); }
+.btn { border-radius: 10px; padding: 10px 24px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-ghost { color: #64748b; padding: 8px 16px; border-radius: 10px; }
+.btn-ghost:hover { background: #f1f5f9; }
+input, select { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; color: #1e293b; width: 100%; outline: none; font-size: 14px; transition: border-color .15s; }
+input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+input::placeholder { color: #94a3b8; }
+.badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 12px 24px; border-radius: 12px; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); transition: opacity .3s; }
+.toggle { width: 44px; height: 24px; border-radius: 12px; cursor: pointer; position: relative; transition: .2s; flex-shrink: 0; }
+.toggle.on { background: #3b82f6; }
+.toggle.off { background: #cbd5e1; }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: white; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+.toggle.on::after { left: 22px; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+.fade-in { animation: fadeIn .25s ease-out; }
+.page { max-width: 720px; margin: 0 auto; padding: 0 16px 80px; }
+@media (min-width: 768px) { .page { padding: 0 24px 80px; } }
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- Header -->
+<header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-[720px] mx-auto px-4 h-14 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold">DM</div>
+      <span class="font-semibold text-slate-800">DeepSeek Monitor</span>
+    </div>
+    <span id="clock" class="text-sm text-slate-400 tabular-nums">--:--:--</span>
+  </div>
+</header>
+
+<!-- Page -->
+<div id="pageContent" class="page pt-5"></div>
+
+<!-- Bottom Nav -->
+<nav class="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-1px_6px_rgba(0,0,0,0.04)]">
+  <div class="max-w-[720px] mx-auto flex">
+    <button class="tab-btn relative flex-1 flex flex-col items-center py-2.5 text-xs text-slate-400" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/></svg>
+      <span>仪表盘</span>
+    </button>
+    <button class="tab-btn relative flex-1 flex flex-col items-center py-2.5 text-xs text-slate-400" data-tab="management" onclick="switchTab('management')">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <span>管理</span>
+    </button>
+    <button class="tab-btn relative flex-1 flex flex-col items-center py-2.5 text-xs text-slate-400" data-tab="alerts" onclick="switchTab('alerts')">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      <span>告警</span>
+      <span id="alertBadge" class="ml-1 bg-rose-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 hidden"></span>
+    </button>
+  </div>
+</nav>
+
+<!-- Project Form Modal -->
+<div id="formModal" class="fixed inset-0 z-50 modal-overlay flex items-end sm:items-center justify-center hidden" onclick="if(event.target===this)closeForm()">
+  <div class="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-6 max-h-[85vh] overflow-y-auto shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-5">
+      <h3 id="formTitle" class="text-lg font-semibold text-slate-800"></h3>
+      <button onclick="closeForm()" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    </div>
+    <form id="projectForm" class="space-y-4" onsubmit="submitProject(event)">
+      <input type="hidden" id="formId">
+      <div><label class="text-sm text-slate-500 block mb-1.5 font-medium">项目名称</label><input id="formName" required placeholder="my-project"></div>
+      <div><label class="text-sm text-slate-500 block mb-1.5 font-medium">API Key</label><input id="formKey" required type="password" placeholder="sk-xxxxxxxxxx"></div>
+      <div><label class="text-sm text-slate-500 block mb-1.5 font-medium">速率阈值 (¥/天)</label><input id="formRateThreshold" type="number" step="0.01" value="5"></div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeForm()" class="btn flex-1 border border-slate-200 text-slate-600 justify-center">取消</button>
+        <button type="submit" class="btn btn-primary flex-1 justify-center">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+let currentTab = 'dashboard';
+let projects = [];
+let alerts = [];
+let chartInstances = {};
+let refreshTimer = null;
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type === 'error' ? '!bg-rose-50 !text-rose-700 !border !border-rose-200' : '!bg-emerald-50 !text-emerald-700 !border !border-emerald-200');
+  t.classList.remove('hidden');
+  t.style.opacity = '1';
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.classList.add('hidden'), 300); }, 2500);
+}
+
+// ===== API =====
+async function api(path, opts = {}) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      ...opts
+    });
+    return await res.json();
+  } catch (err) {
+    showToast('网络请求失败: ' + err.message, 'error');
+    return null;
+  }
+}
+
+async function loadProjects() {
+  const res = await api('/api/projects');
+  if (res && res.code === 0) projects = res.data;
+  return projects;
+}
+
+async function loadAlerts() {
+  const res = await api('/api/data/alerts');
+  if (res && res.code === 0) alerts = res.data;
+  return alerts;
+}
+
+// ===== Render Dashboard =====
+function renderDashboard() {
+  const el = document.getElementById('pageContent');
+
+  // Get global balance from first project (all share same)
+  const gb = projects.length > 0 ? (projects[0].global_balance || 0) : 0;
+  const hasGlobalAlert = alerts.some(a => a.type === 'global_low_balance');
+
+  let html = `<div class="space-y-4 fade-in">`;
+
+  // Global Balance Card
+  html += `
+    <div class="card ${hasGlobalAlert ? 'ring-2 ring-rose-300' : ''}">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <p class="text-sm text-slate-500 font-medium">DeepSeek 账号全局余额</p>
+          <p class="text-3xl font-bold text-slate-800 mt-1">¥${gb.toFixed(2)}</p>
+        </div>
+        ${hasGlobalAlert ? '<span class="badge bg-rose-50 text-rose-700 border border-rose-200">余额不足</span>' : '<span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">正常</span>'}
+      </div>
+      <div class="flex gap-6 text-sm text-slate-500">
+        <span>已监控密钥: <strong class="text-slate-700">${projects.filter(p=>p.enabled).length}</strong> 个</span>
+        <span>未确认告警: <strong class="text-slate-700 ${alerts.length ? 'text-rose-600' : ''}">${alerts.length}</strong></span>
+      </div>
+    </div>`;
+
+  // Global alert banner
+  if (hasGlobalAlert) {
+    const a = alerts.find(x => x.type === 'global_low_balance');
+    html += `<div class="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-sm text-rose-700">
+      <span class="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0"></span>
+      <span>${a ? a.message : '全局余额低于阈值'}</span>
+    </div>`;
+  }
+
+  // Info note
+  html += `<p class="text-xs text-slate-400 text-center">* 只能监控已录入系统的 API 密钥消耗，未录入密钥无法统计</p>`;
+
+  // Project cards
+  if (projects.length === 0) {
+    html += `<div class="text-center py-16 text-slate-400"><p class="mb-2">暂无 API 密钥项目</p>
+      <button onclick="switchTab('management')" class="text-blue-500 text-sm font-medium hover:underline">前往添加 &rarr;</button></div>`;
+  } else {
+    for (const p of projects) {
+      const rate = p.daily_rate || 0;
+      const exceeded = rate > p.rate_threshold;
+      html += `
+        <div class="card" data-pid="${p.id}">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full ${p.enabled ? 'bg-emerald-400' : 'bg-slate-300'}"></span>
+              <span class="font-semibold text-slate-800">${p.name}</span>
+              <span class="badge ${exceeded ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-slate-50 text-slate-500 border border-slate-200'}">${exceeded ? '消耗过快' : '正常'}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-6 text-sm mb-3">
+            <span class="text-slate-500">估算日消耗: <strong class="${exceeded ? 'text-amber-600' : 'text-slate-700'}">¥${rate.toFixed(2)}</strong></span>
+            <span class="text-slate-500">阈值: <strong class="text-slate-700">¥${p.rate_threshold}/天</strong></span>
+          </div>
+          <div class="chart-wrap" id="chart-${p.id}"><canvas id="chart-${p.id}-canvas"></canvas></div>
+        </div>`;
+    }
+  }
+
+  html += `</div>`;
+  el.innerHTML = html;
+
+  // Render charts after DOM
+  if (projects.length > 0) renderAllCharts();
+}
+
+function renderAllCharts() {
+  // Fetch global balance history once for all charts
+  api('/api/data/global-balance?days=7').then(res => {
+    if (!res || res.code !== 0) return;
+    const history = res.data.history || [];
+    const labels = history.map(s => {
+      const d = new Date(s.fetched_at);
+      return (d.getMonth()+1)+'/'+d.getDate();
+    });
+    const values = history.map(s => s.balance);
+
+    for (const p of projects) {
+      if (!p.enabled) continue;
+      const canvas = document.getElementById('chart-'+p.id+'-canvas');
+      if (!canvas) continue;
+      if (chartInstances[p.id]) { chartInstances[p.id].destroy(); delete chartInstances[p.id]; }
+      const ctx = canvas.getContext('2d');
+      chartInstances[p.id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59,130,246,0.06)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+            pointBackgroundColor: '#3b82f6',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: { display: true, ticks: { color: '#94a3b8', maxTicksLimit: 4, font: { size: 9 } }, grid: { display: false } },
+            y: { display: true, ticks: { color: '#94a3b8', font: { size: 9 }, callback: v => '¥'+v.toFixed(1) }, grid: { color: '#f1f5f9' } }
+          },
+          interaction: { mode: 'index', intersect: false }
+        }
+      });
+    }
+  });
+}
+
+// ===== Render Management =====
+function renderManagement() {
+  const el = document.getElementById('pageContent');
+  let html = `<div class="fade-in space-y-4">
+    <button onclick="openForm()" class="btn btn-primary w-full flex items-center justify-center gap-2 py-3">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      添加 API 密钥
+    </button>`;
+
+  if (projects.length === 0) {
+    html += `<div class="text-center py-12 text-slate-400"><p>暂无密钥项目</p></div>`;
+  } else {
+    for (const p of projects) {
+      const rate = p.daily_rate || 0;
+      html += `<div class="card flex items-center justify-between">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-slate-800">${p.name}</span>
+            <span class="text-xs text-slate-400">日耗: ¥${rate.toFixed(2)}</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1 truncate">${p.api_key.substring(0,24)}...</p>
+        </div>
+        <div class="flex items-center gap-2 ml-3">
+          <div class="toggle ${p.enabled ? 'on' : 'off'}" onclick="event.stopPropagation();toggleProject(${p.id},${!p.enabled})"></div>
+          <button onclick="openForm(${p.id})" class="btn-ghost text-sm text-blue-600">编辑</button>
+          <button onclick="deleteProject(${p.id})" class="btn-ghost text-sm text-rose-600">删除</button>
+        </div>
+      </div>`;
+    }
+  }
+
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+// ===== Render Alerts =====
+function renderAlerts() {
+  const el = document.getElementById('pageContent');
+  updateAlertBadge();
+
+  if (alerts.length === 0) {
+    el.innerHTML = `<div class="text-center py-20 text-slate-400 fade-in">
+      <svg class="w-14 h-14 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <p>暂无未确认告警</p>
+    </div>`;
+    return;
+  }
+
+  let html = `<div class="space-y-3 fade-in">`;
+  for (const a of alerts) {
+    const isGlobal = a.type === 'global_low_balance';
+    const isRate = a.type === 'high_rate';
+    let badgeColor, dotColor;
+    if (isGlobal) { badgeColor = 'bg-rose-50 text-rose-700 border border-rose-200'; dotColor = 'bg-rose-500'; }
+    else if (isRate) { badgeColor = 'bg-amber-50 text-amber-700 border border-amber-200'; dotColor = 'bg-amber-500'; }
+    else { badgeColor = 'bg-slate-50 text-slate-600 border border-slate-200'; dotColor = 'bg-slate-400'; }
+
+    html += `<div class="card flex items-start gap-3">
+      <span class="w-2.5 h-2.5 rounded-full mt-1.5 ${dotColor} flex-shrink-0"></span>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-0.5">
+          <span class="font-medium text-slate-800 text-sm">${a.project_name || '账号全局'}</span>
+          <span class="badge ${badgeColor}">${isGlobal ? '全局余额' : '消耗超限'}</span>
+        </div>
+        <p class="text-sm text-slate-500">${a.message}</p>
+        <p class="text-xs text-slate-400 mt-1">${a.triggered_at}</p>
+      </div>
+      <button onclick="ackAlert(${a.id})" class="btn-ghost text-xs text-blue-600 whitespace-nowrap font-medium">标为已读</button>
+    </div>`;
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+// ===== Tab =====
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('tab-active', b.dataset.tab === tab);
+    b.classList.toggle('text-slate-400', b.dataset.tab !== tab);
+    b.classList.toggle('text-blue-600', b.dataset.tab === tab);
+  });
+  if (tab === 'dashboard') renderDashboard();
+  else if (tab === 'management') renderManagement();
+  else if (tab === 'alerts') renderAlerts();
+}
+
+// ===== Actions =====
+async function toggleProject(id, enabled) {
+  await api(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify({ enabled }) });
+  await refresh();
+}
+
+async function deleteProject(id) {
+  if (!confirm('确认删除此密钥项目？相关数据将清除。')) return;
+  await api(`/api/projects/${id}`, { method: 'DELETE' });
+  await refresh();
+  if (currentTab === 'dashboard' || currentTab === 'management') renderCurrent();
+}
+
+function openForm(id) {
+  const modal = document.getElementById('formModal');
+  document.getElementById('formId').value = '';
+  document.getElementById('formTitle').textContent = '添加 API 密钥';
+  document.getElementById('formName').value = '';
+  document.getElementById('formKey').value = '';
+  document.getElementById('formRateThreshold').value = 5;
+  if (id) {
+    const p = projects.find(x => x.id === id);
+    if (p) {
+      document.getElementById('formTitle').textContent = '编辑密钥';
+      document.getElementById('formId').value = p.id;
+      document.getElementById('formName').value = p.name;
+      document.getElementById('formKey').value = p.api_key;
+      document.getElementById('formRateThreshold').value = p.rate_threshold;
+    }
+  }
+  modal.classList.remove('hidden');
+}
+
+function closeForm() { document.getElementById('formModal').classList.add('hidden'); }
+
+async function submitProject(e) {
+  e.preventDefault();
+  const id = document.getElementById('formId').value;
+  const data = {
+    name: document.getElementById('formName').value.trim(),
+    api_key: document.getElementById('formKey').value.trim(),
+    rate_threshold: parseFloat(document.getElementById('formRateThreshold').value) || 5
+  };
+  if (!data.name || !data.api_key) { showToast('请填写完整信息', 'error'); return; }
+  const res = await api(`/api/projects${id ? '/' + id : ''}`, {
+    method: id ? 'PUT' : 'POST',
+    body: JSON.stringify(data)
+  });
+  if (res && res.code === 0) {
+    showToast(id ? '已更新' : '已添加');
+    closeForm();
+    await refresh();
+    renderCurrent();
+  }
+}
+
+async function ackAlert(id) {
+  const res = await api(`/api/data/alerts/${id}/ack`, { method: 'PUT' });
+  if (res && res.code === 0) {
+    alerts = alerts.filter(a => a.id !== id);
+    if (currentTab === 'alerts') renderAlerts();
+    updateAlertBadge();
+  }
+}
+
+function renderCurrent() {
+  if (currentTab === 'dashboard') renderDashboard();
+  else if (currentTab === 'management') renderManagement();
+  else if (currentTab === 'alerts') renderAlerts();
+}
+
+function updateAlertBadge() {
+  const badge = document.getElementById('alertBadge');
+  if (alerts.length > 0) { badge.textContent = alerts.length; badge.classList.remove('hidden'); }
+  else { badge.classList.add('hidden'); }
+}
+
+// ===== Refresh =====
+async function refresh() {
+  await Promise.all([loadProjects(), loadAlerts()]);
+  renderCurrent();
+}
+
+// ===== Init =====
+(function init() {
+  // Clock
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+  }, 1000);
+
+  refresh();
+  switchTab('dashboard');
+  setInterval(refresh, 30000);
+
+  // Register Service Worker for PWA
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
