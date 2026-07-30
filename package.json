@@ -8,7 +8,7 @@
     "electron-dev": "electron .",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "echo 'Skipping electron-builder (PWA mode)'"
   },
   "build": {
     "appId": "com.deepseek.monitor",
