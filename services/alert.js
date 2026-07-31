@@ -35,4 +35,24 @@ function acknowledge(id) {
   }
 }
 
-module.exports = { addAlert, getUnacknowledged, acknowledge };
+/**
+ * 判断最近 hours 小时内是否已有同类型告警（用于去重，避免每轮轮询重复插入）。
+ * @param {number} projectId  全局告警用 0
+ * @param {string} type
+ * @param {number} hours
+ */
+function hasRecent(projectId, type, hours = 24) {
+  try {
+    const row = db.prepare(`
+      SELECT id FROM alerts
+      WHERE project_id = ? AND type = ? AND triggered_at >= datetime('now', ?)
+      LIMIT 1
+    `).get(projectId, type, `-${hours} hours`);
+    return Boolean(row);
+  } catch (err) {
+    console.error('[Alert] 查询最近告警失败:', err.message);
+    return false;
+  }
+}
+
+module.exports = { addAlert, getUnacknowledged, acknowledge, hasRecent };
