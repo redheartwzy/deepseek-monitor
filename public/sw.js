@@ -1,6 +1,6 @@
 // DeepSeek Monitor - Service Worker v2
 // 模块九：预留 Web Push（VAPID）接收端；需配合后端 web-push 服务使用（可选）。
-const CACHE = 'ds-monitor-v2';
+const CACHE = 'ds-monitor-v3';
 const STATIC = [
   '/',
   '/manifest.json',

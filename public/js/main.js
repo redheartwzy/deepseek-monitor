@@ -222,7 +222,13 @@ function handleAction(action, id) {
 function wireEvents() {
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');
-    if (target) handleAction(target.dataset.action, target.dataset.id || target.dataset.tab || target.dataset.days);
+    if (target) {
+      handleAction(target.dataset.action, target.dataset.id || target.dataset.tab || target.dataset.days);
+      return;
+    }
+    // 兜底：老式 tab-btn（仅 data-tab、无 data-action）也能切换
+    const tabBtn = e.target.closest('.tab-btn');
+    if (tabBtn && tabBtn.dataset.tab) switchTab(tabBtn.dataset.tab);
   });
   document.addEventListener('change', (e) => {
     if (e.target && e.target.id === 'modelSelect') {
