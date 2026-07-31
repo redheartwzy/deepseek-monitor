@@ -156,7 +156,8 @@ export async function subscribePush() {
     }
   }
   try {
-    const { data } = await api.getPushStatus();
+    // getPushStatus 已返回 {key, enabled, subscribed}，直接取用，勿再解构 .data
+    const data = await api.getPushStatus();
     if (!data || !data.enabled || !data.key) return { ok: false, reason: '服务端未配置 Web Push（VAPID）' };
 
     const reg = await navigator.serviceWorker.ready;

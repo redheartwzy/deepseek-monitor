@@ -166,7 +166,7 @@ async function doLogout() {
 
 async function refreshPushStatus() {
   try {
-    const { data } = await api.getPushStatus();
+    const data = await api.getPushStatus();
     state.pushSubscribed = !!(data && data.subscribed);
   } catch { /* 忽略 */ }
 }
