@@ -10,7 +10,9 @@ const DEFAULTS = {
   balanceThreshold: 5.0,
   emailEnabled: false,
   emailConfigured: false,
-  usageConfigured: false
+  usageConfigured: false,
+  pushEnabled: false,
+  vapidPublicKey: ''
 };
 
 let serverConfig = { ...DEFAULTS };

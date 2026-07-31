@@ -23,7 +23,8 @@ const state = {
   lastUpdated: null,
   loading: false,
   error: null,
-  fromCache: false
+  fromCache: false,
+  pushSubscribed: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -159,6 +160,46 @@ async function doLogout() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   state.user = null;
   showAuthScreen(false);
+}
+
+// ================= 锁屏推送 =================
+
+async function refreshPushStatus() {
+  try {
+    const { data } = await api.getPushStatus();
+    state.pushSubscribed = !!(data && data.subscribed);
+  } catch { /* 忽略 */ }
+}
+
+async function togglePush() {
+  try {
+    if (state.pushSubscribed) {
+      await notify.unsubscribePush();
+      state.pushSubscribed = false;
+      showToast('已关闭锁屏推送');
+    } else {
+      showToast('正在请求权限并订阅…');
+      const r = await notify.subscribePush();
+      if (r.ok) {
+        state.pushSubscribed = true;
+        showToast('锁屏推送已开启');
+      } else {
+        showToast(r.reason || '开启失败', 'error');
+      }
+    }
+    render(state);
+  } catch (err) {
+    showToast(err.message || '操作失败', 'error');
+  }
+}
+
+async function sendTestPush() {
+  try {
+    const { message } = await api.testPush();
+    showToast(message || '已发送测试推送');
+  } catch (err) {
+    showToast(err.message || '发送失败', 'error');
+  }
 }
 
 // ================= 修改密码 =================
@@ -321,6 +362,8 @@ function handleAction(action, id) {
     case 'logout': doLogout(); break;
     case 'open-pwd-modal': openPwdModal(); break;
     case 'close-pwd-modal': closePwdModal(); break;
+    case 'toggle-push': togglePush(); break;
+    case 'test-push': sendTestPush(); break;
     default: break;
   }
 }
@@ -385,6 +428,7 @@ async function init() {
   state.user = me;
   hideAuthScreen();
   await refresh();
+  await refreshPushStatus();
 
   pollTimer = setInterval(() => poll(), getRefreshInterval());
   if ('serviceWorker' in navigator) {

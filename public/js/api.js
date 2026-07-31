@@ -82,3 +82,11 @@ export const deleteProject = (id) => getJSON(`/api/projects/${id}`, { method: 'D
 
 // ===== 告警 =====
 export const ackAlert = (id) => getJSON(`/api/data/alerts/${id}/ack`, { method: 'PUT' });
+
+// ===== Web Push（锁屏推送）=====
+export const getPushStatus = () => getJSON('/api/push/vapid-public-key');
+export const subscribePush = (subscription) =>
+  getJSON('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) });
+export const unsubscribePush = (endpoint) =>
+  getJSON('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) });
+export const testPush = () => getJSON('/api/push/test', { method: 'POST' });

@@ -7,6 +7,13 @@ const {
   calculateRate, deriveDailySpendFromSnapshots
 } = require('./services/snapshot');
 const { addAlert, hasRecent } = require('./services/alert');
+const { sendPushToUser } = require('./services/push');
+
+/** 告警触发时顺带推送锁屏通知（fire-and-forget） */
+function notifyPush(userId, title, body) {
+  if (userId == null) return;
+  sendPushToUser(userId, { title, body, url: '/#alerts' }).catch(() => {});
+}
 
 let running = false;
 let pendingRequest = false;
@@ -61,6 +68,7 @@ function checkAlerts(projects, userBalances) {
         addAlert(uid, 0, 'global_low_balance',
           `【账号全局】余额 ¥${balance.toFixed(2)} 低于阈值 ¥${config.globalBalanceThreshold.toFixed(2)}`);
         console.log(`[Alert] 用户 ${uid} 全局余额告警: ¥${balance.toFixed(2)} < ¥${config.globalBalanceThreshold.toFixed(2)}`);
+        notifyPush(uid, '🚨 账号余额不足', `当前余额 ¥${balance.toFixed(2)}，请及时充值`);
       }
     }
   }
@@ -73,6 +81,7 @@ function checkAlerts(projects, userBalances) {
         addAlert(p.user_id, p.id, 'key_low_balance',
           `【${p.name}】余额 ¥${p.last_balance.toFixed(2)} 低于独立阈值 ¥${(p.balance_threshold ?? config.defaults.balanceThreshold).toFixed(2)}`);
         console.log(`[Alert] ${p.name} 低余额告警: ¥${p.last_balance.toFixed(2)} < ¥${p.balance_threshold}`);
+        notifyPush(p.user_id, '🚨 余额不足', `【${p.name}】余额 ¥${p.last_balance.toFixed(2)} 低于阈值`);
       }
     }
 
@@ -81,6 +90,7 @@ function checkAlerts(projects, userBalances) {
     if (rate > 0 && rate > p.rate_threshold && !hasRecent(p.user_id, p.id, 'high_rate', 24)) {
       addAlert(p.user_id, p.id, 'high_rate',
         `【${p.name}】估算日消耗 ¥${rate.toFixed(2)} 超过阈值 ¥${p.rate_threshold.toFixed(2)}`);
+      notifyPush(p.user_id, '⚡ 消耗过快', `【${p.name}】估算日消耗 ¥${rate.toFixed(2)} 超过阈值`);
     }
   }
 }

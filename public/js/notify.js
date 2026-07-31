@@ -6,6 +6,7 @@
  *  - 页面顶部持续红色警告横幅
  */
 import * as storage from './storage.js';
+import * as api from './api.js';
 
 let bannerDismissed = false;
 
@@ -122,3 +123,70 @@ export function renderBanner(lowKeys) {
 
 export function dismissBanner() { bannerDismissed = true; }
 export function resetBanner() { bannerDismissed = false; }
+
+// ===== Web Push（锁屏推送）=====
+
+/** VAPID 公钥（base64url）→ Uint8Array */
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+/** 浏览器是否支持 Web Push */
+export function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+/**
+ * 开启锁屏推送：请求通知权限 → 用 VAPID 公钥订阅 → 上报后端。
+ * @returns {Promise<{ok:boolean, reason?:string}>}
+ */
+export async function subscribePush() {
+  if (!pushSupported()) return { ok: false, reason: '浏览器不支持 Web Push（需 HTTPS 且非隐私模式）' };
+  if (Notification.permission !== 'granted') {
+    try {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return { ok: false, reason: '通知权限被拒绝' };
+    } catch {
+      return { ok: false, reason: '无法请求通知权限' };
+    }
+  }
+  try {
+    const { data } = await api.getPushStatus();
+    if (!data || !data.enabled || !data.key) return { ok: false, reason: '服务端未配置 Web Push（VAPID）' };
+
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.key)
+      });
+    }
+    const json = sub.toJSON();
+    await api.subscribePush({
+      endpoint: sub.endpoint,
+      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth }
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err && err.message ? err.message : '订阅失败' };
+  }
+}
+
+/** 关闭锁屏推送：通知后端删除 + 浏览器退订 */
+export async function unsubscribePush() {
+  if (!pushSupported()) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      try { await api.unsubscribePush(sub.endpoint); } catch { /* 忽略 */ }
+      await sub.unsubscribe();
+    }
+  } catch { /* 忽略 */ }
+}

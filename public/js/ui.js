@@ -276,6 +276,17 @@ function renderManagement(state, el) {
         <button data-action="open-pwd-modal" class="btn btn-primary !py-2 !px-4 text-sm whitespace-nowrap">修改密码</button>
       </div>
 
+      <div class="card text-sm text-slate-500 flex items-center justify-between">
+        <div class="min-w-0">
+          <p class="font-semibold text-slate-800 text-sm mb-0.5">锁屏推送（Web Push）</p>
+          <p class="text-xs">浏览器关闭 / 手机锁屏也能收到余额告警</p>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          ${state.pushSubscribed ? '<button data-action="test-push" class="btn-ghost text-sm text-blue-600 whitespace-nowrap">发送测试</button>' : ''}
+          <button data-action="toggle-push" class="btn ${state.pushSubscribed ? 'border border-slate-200 text-slate-600' : 'btn-primary'} !py-2 !px-4 text-sm whitespace-nowrap">${state.pushSubscribed ? '关闭推送' : '开启推送'}</button>
+        </div>
+      </div>
+
       <div class="space-y-3">
         ${rows || '<div class="text-center py-12 text-slate-400">暂无密钥</div>'}
       </div>

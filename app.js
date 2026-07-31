@@ -3,6 +3,7 @@ const config = require('./config');
 const authRouter = require('./routes/auth');
 const projectsRouter = require('./routes/projects');
 const dataRouter = require('./routes/data');
+const pushRouter = require('./routes/push');
 const scheduler = require('./scheduler');
 const { requireAuth, cleanupSessions } = require('./services/auth');
 const { startEmailScheduler, isConfigured } = require('./services/email');
@@ -23,9 +24,10 @@ app.use((req, res, next) => {
 // 登录系统：认证相关接口放行，其余业务接口均需登录
 app.use('/api/auth', authRouter);
 
-// 需要登录才能访问的业务接口（projects / data / config）
+// 需要登录才能访问的业务接口（projects / data / config / push）
 app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/data', requireAuth, dataRouter);
+app.use('/api/push', requireAuth, pushRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ code: 0, message: 'ok' });

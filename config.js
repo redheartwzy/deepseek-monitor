@@ -81,8 +81,19 @@ const config = {
   },
 
   // ===== 数据保留 =====
-  snapshotRetentionDays: toInt(process.env.SNAPSHOT_RETENTION_DAYS, 90)
+  snapshotRetentionDays: toInt(process.env.SNAPSHOT_RETENTION_DAYS, 90),
+
+  // ===== Web Push（锁屏推送）=====
+  vapid: {
+    // VAPID 公钥 / 私钥：可用 `node -e "const w=require('web-push');console.log(w.generateVAPIDKeys())"` 生成
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:deepseek-monitor@localhost'
+  }
 };
+
+// 是否启用 Web Push（公钥私钥都配置了才启用）
+config.pushEnabled = Boolean(config.vapid.publicKey && config.vapid.privateKey);
 
 // 强制最低轮询间隔 3 分钟
 if (config.pollIntervalMin < 3) config.pollIntervalMin = 3;
@@ -96,7 +107,10 @@ config.publicConfig = {
   emailConfigured: Boolean(
     config.email.enabled && config.email.host && config.email.user && config.email.pass
   ),
-  usageConfigured: Boolean(config.deepseekUsageEndpoint)
+  usageConfigured: Boolean(config.deepseekUsageEndpoint),
+  // Web Push 公钥与开关（公钥必须给前端用于订阅；私钥仅存服务端）
+  pushEnabled: config.pushEnabled,
+  vapidPublicKey: config.vapid.publicKey
 };
 
 module.exports = config;
