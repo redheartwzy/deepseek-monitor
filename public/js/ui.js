@@ -129,36 +129,40 @@ function renderDashboard(state, el) {
   const modelOpts = models.map(m =>
     `<option value="${esc(m)}" ${m === state.modelFilter ? 'selected' : ''}>${esc(m)}</option>`).join('');
 
-  const keyCards = (state.projects || []).map(p => {
-    const low = p.enabled && p.last_balance != null && p.last_balance < (p.balance_threshold ?? getBalanceThreshold());
-    const rate = p.daily_rate || 0;
-    const rateHigh = rate > p.rate_threshold;
-    return `
-      <div class="card" data-id="${p.id}">
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${p.enabled ? 'bg-emerald-400' : 'bg-slate-300'}"></span>
-            <span class="font-semibold text-slate-800 truncate">${esc(p.name)}</span>
-            ${p.is_default ? '<span class="badge bg-blue-50 text-blue-600 border border-blue-200">默认</span>' : ''}
-            ${low ? '<span class="badge bg-rose-50 text-rose-700 border border-rose-200">余额不足</span>'
-                 : (p.enabled ? '<span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">正常</span>'
-                              : '<span class="badge bg-slate-50 text-slate-500 border border-slate-200">已暂停</span>')}
-            ${rateHigh ? '<span class="badge bg-amber-50 text-amber-700 border border-amber-200">消耗过快</span>' : ''}
-          </div>
-          <span class="text-xs text-slate-400 tabular-nums">${p.last_balance != null ? '¥' + Number(p.last_balance).toFixed(2) : '未获取'}</span>
-        </div>
-        <div class="flex items-center gap-5 text-sm text-slate-500 mb-3">
-          <span>余额阈值: <strong class="text-slate-700">¥${Number(p.balance_threshold ?? getBalanceThreshold()).toFixed(2)}</strong></span>
-          <span>估算日耗: <strong class="${rateHigh ? 'text-amber-600' : 'text-slate-700'}">¥${rate.toFixed(2)}</strong></span>
-          <span>更新: <span class="text-xs text-slate-400">${fmtTime(p.last_fetched_at)}</span></span>
-        </div>
-        <div class="chart-wrap h-14"><canvas id="spark-${p.id}"></canvas></div>
-      </div>`;
-  }).join('');
+  // 首页最重要信息：账号总余额（来自后端全局快照）
+  const gb = state.globalBalance;
+  let status;
+  if (gb == null) status = { cls: 'bg-white/20 text-white', label: '等待首次拉取' };
+  else if (gb < getBalanceThreshold()) status = { cls: 'bg-rose-500 text-white', label: '余额不足' };
+  else status = { cls: 'bg-emerald-500 text-white', label: '正常' };
+  const enabledCount = (state.projects || []).filter(p => p.enabled).length;
+  const alertsCount = (state.alerts || []).length;
 
   el.innerHTML = `
     <div class="space-y-4 fade-in">
-      <!-- 汇总统计卡片 -->
+      <!-- 总余额（最重要） -->
+      <div class="card relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-600 to-indigo-700 text-white !p-6">
+        <div class="absolute -right-12 -top-12 w-52 h-52 rounded-full bg-white/10 pointer-events-none"></div>
+        <div class="absolute -right-20 bottom-0 w-40 h-40 rounded-full bg-white/5 pointer-events-none"></div>
+        <div class="relative flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm text-blue-100 font-medium">DeepSeek 账号总余额</p>
+            <p class="text-5xl font-bold mt-2 tabular-nums leading-tight">¥${gb != null ? Number(gb).toFixed(2) : '—'}</p>
+            <p class="text-xs text-blue-100 mt-2">告警阈值 ¥${getBalanceThreshold().toFixed(2)} · 上次更新 ${fmtTime(state.lastUpdated)}</p>
+          </div>
+          <div class="flex flex-col items-end gap-2 flex-shrink-0">
+            <span class="badge ${status.cls}">${status.label}</span>
+            <button data-action="switch-tab" data-tab="management" class="hero-btn">管理密钥</button>
+          </div>
+        </div>
+        <div class="relative mt-4 pt-3 border-t border-white/20 flex flex-wrap gap-x-5 gap-y-1 text-xs text-blue-100">
+          <span>🔑 已监控 <strong class="text-white">${enabledCount}</strong> 个密钥</span>
+          <span>🚨 未确认告警 <strong class="text-white">${alertsCount}</strong></span>
+          <span>📧 邮件告警 ${(state.config && state.config.emailConfigured) ? '开' : '关'}</span>
+        </div>
+      </div>
+
+      <!-- 次要统计：花销 / 请求次数 / Tokens -->
       <div class="grid grid-cols-3 gap-3">
         <div class="card text-center py-4">
           <p class="text-xs text-slate-400 mb-1">总消费金额 (CNY)</p>
@@ -175,7 +179,7 @@ function renderDashboard(state, el) {
       </div>
 
       <!-- 时间维度 + 模型筛选 -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <div class="flex bg-slate-100 rounded-xl p-1">
           ${rangeBtn(7, '近7天')}${rangeBtn(30, '近30天')}${rangeBtn(90, '近90天')}
         </div>
@@ -194,17 +198,13 @@ function renderDashboard(state, el) {
         <div class="chart-wrap h-72"><canvas id="usageChart"></canvas></div>
       </div>
 
-      <!-- 密钥余额卡片 -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="font-semibold text-slate-800 text-sm">密钥余额</h3>
-          <button data-action="open-key-form" class="text-blue-600 text-sm font-medium">+ 添加</button>
-        </div>
-        ${keyCards || '<div class="text-center py-10 text-slate-400">暂无密钥，点击右上角“添加”录入 API Key</div>'}
-      </div>
+      ${(state.projects || []).length === 0 ? `
+        <div class="text-center py-12 text-slate-400 card">
+          <p class="mb-2">还没有 API 密钥，添加后即可开始监控余额</p>
+          <button data-action="open-key-form" class="btn btn-primary justify-center mx-auto mt-2">+ 添加 API 密钥</button>
+        </div>` : ''}
     </div>`;
 
-  // 图表绘制（主图 + 密钥 sparkline 由 main.js 异步补充）
   renderUsageChart('usageChart', daily);
 }
 

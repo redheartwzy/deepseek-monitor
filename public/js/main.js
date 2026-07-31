@@ -5,7 +5,6 @@
 import * as api from './api.js';
 import * as storage from './storage.js';
 import * as notify from './notify.js';
-import { renderSparkline } from './chart.js';
 import {
   render, showToast, computeLowKeys, setLoading
 } from './ui.js';
@@ -54,8 +53,6 @@ async function poll({ manual = false } = {}) {
     storage.cache.saveProjects(state.projects);
     storage.cache.saveAlerts(state.alerts);
     storage.cache.saveUsage(state.usage);
-
-    loadKeySparklines();
   } catch (err) {
     // 网络离线 / API 限流 → 回退缓存
     const cachedUsage = storage.cache.readUsage();
@@ -81,18 +78,6 @@ async function poll({ manual = false } = {}) {
 
 async function refresh() {
   await poll({ manual: true });
-}
-
-/** 为每个启用密钥加载近 30 天余额 sparkline（失败则忽略） */
-async function loadKeySparklines() {
-  const enabled = (state.projects || []).filter(p => p.enabled);
-  await Promise.all(enabled.map(async (p) => {
-    try {
-      const data = await api.getJSON(`/api/data/snapshots/${p.id}?days=30`);
-      const values = (data || []).map(s => s.balance).filter(v => v != null);
-      renderSparkline(`spark-${p.id}`, values);
-    } catch { /* 无 sparkline 数据 */ }
-  }));
 }
 
 // ================= Tab =================

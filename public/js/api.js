@@ -11,16 +11,27 @@ import { setConfig } from './config.js';
  * @returns {Promise<any>}
  */
 export async function getJSON(path, opts = {}) {
+  // 请求超时兜底：避免接口挂起时 Loading 遮罩一直挡住页面（导致所有按钮点不动）
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
   let res;
   try {
     res = await fetch(path, {
       headers: { 'Content-Type': 'application/json', ...opts.headers },
+      signal: opts.signal || controller.signal,
       ...opts
     });
   } catch (err) {
-    const e = new Error(`网络请求失败：${err.message}，请检查后端服务是否在线`);
+    const e = new Error(
+      err.name === 'AbortError'
+        ? '请求超时，请稍后重试'
+        : `网络请求失败：${err.message}，请检查后端服务是否在线`
+    );
     e.kind = 'network';
     throw e;
+  } finally {
+    clearTimeout(timer);
   }
 
   let body = null;

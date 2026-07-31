@@ -26,10 +26,11 @@ function getGlobalSnapshots(days = 7) {
 
 function getLatestGlobalBalance() {
   try {
-    return db.prepare('SELECT balance FROM global_snapshots ORDER BY fetched_at DESC LIMIT 1').pluck().get() || 0;
+    // 无快照时返回 null（表示“尚未拉取”），避免把 ¥0.00 误当真实余额
+    return db.prepare('SELECT balance FROM global_snapshots ORDER BY fetched_at DESC LIMIT 1').pluck().get() ?? null;
   } catch (err) {
     console.error('[Snapshot] 查询最新余额失败:', err.message);
-    return 0;
+    return null;
   }
 }
 

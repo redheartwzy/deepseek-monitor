@@ -1,6 +1,6 @@
-// DeepSeek Monitor - Service Worker v2
+// DeepSeek Monitor - Service Worker v4
 // 模块九：预留 Web Push（VAPID）接收端；需配合后端 web-push 服务使用（可选）。
-const CACHE = 'ds-monitor-v3';
+const CACHE = 'ds-monitor-v4';
 const STATIC = [
   '/',
   '/manifest.json',
@@ -24,18 +24,31 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(k => k !== CACHE).map(k => caches.delete(k))
-    ))
+    Promise.all([
+      caches.keys().then(keys => Promise.all(
+        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+      )),
+      // 立即接管所有已打开的页面，避免仍用旧缓存里的页面
+      self.clients.claim()
+    ])
   );
 });
 
-// Network-first for API, cache-first for static assets
+// API 只走网络；页面导航网络优先（部署后立刻拿到新版页面，离线时才回退缓存）；
+// 静态资源缓存优先。
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+  if (url.pathname.startsWith('/api/')) return;
 
-  // API 请求只走网络
-  if (url.pathname.startsWith('/api/')) {
+  // 页面导航：网络优先 —— 修复重新部署后仍加载旧页面（按钮无响应）的问题
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const clone = res.clone();
+        if (res.ok) caches.open(CACHE).then(c => c.put('/', clone));
+        return res;
+      }).catch(() => caches.match('/'))
+    );
     return;
   }
 
@@ -46,10 +59,7 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE).then(c => c.put(e.request, clone));
       }
       return res;
-    }).catch(() => {
-      if (e.request.mode === 'navigate') return caches.match('/');
-      return new Response('Offline', { status: 503 });
-    }))
+    }).catch(() => new Response('Offline', { status: 503 })))
   );
 });
 
