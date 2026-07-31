@@ -16,6 +16,7 @@
 - 📊 **用量趋势** —— 消费金额折线图，支持近 7 / 30 / 90 天切换与模型筛选
 - 🔑 **多密钥管理** —— 为多个 API Key 设置别名、独立阈值，支持暂停 / 默认 / 删除
 - 🔔 **多通道告警** —— 顶部横幅 + 系统通知 + 移动端振动 + 强制弹窗
+- 📱 **锁屏推送（Web Push）** —— 浏览器关闭 / 手机锁屏也能收到告警（VAPID）
 - 📧 **邮件告警** —— 余额不足时每小时自动发送提醒邮件（Nodemailer）
 - 📱 **PWA 支持** —— 可安装到桌面 / 主屏，离线展示缓存数据
 - 🐳 **云端就绪** —— Docker 多阶段构建，一键部署到 Railway
@@ -106,8 +107,13 @@ docker run -d -p 3000:3000 \
 | `EMAIL_FROM` | 发件人 | 否 | `SMTP_USER` |
 | `EMAIL_SUBJECT_PREFIX` | 邮件主题前缀 | 否 | `[DeepSeek Monitor]` |
 | `EMAIL_CRON` | 邮件检查定时（cron 表达式） | 否 | `7 * * * *`（每小时） |
+| **Web Push（锁屏推送）** | | | |
+| `VAPID_PUBLIC_KEY` | VAPID 公钥（前端订阅用） | 推送必填 | 空 |
+| `VAPID_PRIVATE_KEY` | VAPID 私钥（仅服务端） | 推送必填 | 空 |
+| `VAPID_SUBJECT` | 推送联系邮箱 / 站点 URL | 否 | `mailto:deepseek-monitor@localhost` |
 
 > 收件人取自**各用户的注册邮箱**，无需 `EMAIL_RECIPIENT`；未填邮箱的用户不发邮件。
+> VAPID 密钥生成：`node -e "const w=require('web-push');console.log(w.generateVAPIDKeys())"`，前后端同一对公钥/私钥。
 
 ### 用量接口（可选）
 
