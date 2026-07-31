@@ -60,6 +60,21 @@ export const loadConfig = async () => {
   return c;
 };
 
+// ===== 登录系统 =====
+/** 是否存在账号（true = 首次使用，默认展示注册） */
+export const authFirst = () => getJSON('/api/auth/first');
+/** 当前登录用户；未登录返回 null（不抛错） */
+export async function authMe() {
+  try { return await getJSON('/api/auth/me'); } catch { return null; }
+}
+export const register = (data) => getJSON('/api/auth/register', { method: 'POST', body: JSON.stringify(data) });
+export const login = (username, password) =>
+  getJSON('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+export const logout = () => getJSON('/api/auth/logout', { method: 'POST' });
+export const changePassword = (current_password, new_password) =>
+  getJSON('/api/auth/change-password',
+    { method: 'POST', body: JSON.stringify({ current_password, new_password }) });
+
 // ===== 模块七：密钥管理 =====
 export const createProject = (data) => getJSON('/api/projects', { method: 'POST', body: JSON.stringify(data) });
 export const updateProject = (id, data) => getJSON(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) });

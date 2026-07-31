@@ -40,6 +40,10 @@ input::placeholder { color: #94a3b8; }
 .toggle.off { background: #cbd5e1; }
 .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: white; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
 .toggle.on::after { left: 22px; }
+
+/* 登录 / 注册 Tab */
+.auth-tab { color: #64748b; transition: all .15s; }
+.auth-tab-active { background: #fff; color: #3b82f6; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
 .fade-in { animation: fadeIn .25s ease-out; }
 .page { max-width: 760px; margin: 0 auto; padding: 0 16px 96px; }
@@ -79,6 +83,69 @@ input::placeholder { color: #94a3b8; }
 <!-- 通知 -->
 <div id="toast" class="toast hidden"></div>
 
+<!-- 登录 / 注册（首次使用） -->
+<div id="authScreen" class="fixed inset-0 z-[100] bg-slate-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+  <div class="w-full max-w-md py-6">
+    <div class="text-center mb-6">
+      <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xl font-bold mx-auto mb-3 shadow-lg shadow-blue-500/20">DM</div>
+      <h1 class="text-2xl font-bold text-slate-800">DeepSeek Monitor</h1>
+      <p class="text-sm text-slate-500 mt-1">登录后管理你的 API 余额、用量与告警</p>
+    </div>
+    <div class="card !p-6">
+      <div class="flex bg-slate-100 rounded-xl p-1 mb-5">
+        <button type="button" data-auth-tab="login" id="authTabLogin" class="auth-tab flex-1 py-2 rounded-lg text-sm">登录</button>
+        <button type="button" data-auth-tab="register" id="authTabRegister" class="auth-tab flex-1 py-2 rounded-lg text-sm">注册</button>
+      </div>
+
+      <!-- 登录表单 -->
+      <form id="loginForm" class="auth-panel space-y-4">
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">用户名</label>
+          <input id="loginUsername" required autocomplete="username" placeholder="输入用户名">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">密码</label>
+          <input id="loginPassword" type="password" required autocomplete="current-password" placeholder="输入密码">
+        </div>
+        <button type="submit" class="btn btn-primary w-full justify-center py-3">登 录</button>
+      </form>
+
+      <!-- 注册表单（首次登录：个人信息，API / 邮箱选填） -->
+      <form id="registerForm" class="auth-panel hidden space-y-4">
+        <p class="text-xs text-slate-400 -mt-1">首次使用请先注册。除用户名、密码外均为选填，API Key 可在注册后随时在「密钥管理」中添加。</p>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">用户名 <span class="text-rose-500">*</span></label>
+          <input id="regUsername" required autocomplete="username" placeholder="至少 2 个字符">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">密码 <span class="text-rose-500">*</span></label>
+          <input id="regPassword" type="password" required autocomplete="new-password" placeholder="至少 6 位">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">确认密码 <span class="text-rose-500">*</span></label>
+          <input id="regPassword2" type="password" required autocomplete="new-password" placeholder="再次输入密码">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">昵称 / 姓名（个人信息）</label>
+          <input id="regDisplayName" autocomplete="name" placeholder="怎么称呼你">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">API Key（选填）</label>
+          <input id="regApiKey" type="password" autocomplete="off" placeholder="sk-xxxxxxxxxxxxxxxx">
+        </div>
+        <div>
+          <label class="text-sm text-slate-500 block mb-1.5 font-medium">邮箱（选填，用于低余额邮件告警）</label>
+          <input id="regEmail" type="email" autocomplete="email" placeholder="you@example.com">
+        </div>
+        <button type="submit" class="btn btn-primary w-full justify-center py-3">注册并登录</button>
+      </form>
+
+      <p id="authError" class="hidden text-sm text-rose-600 mt-4 text-center"></p>
+    </div>
+    <p class="text-center text-xs text-slate-400 mt-4">🔒 密钥与余额数据仅本人可见</p>
+  </div>
+</div>
+
 <!-- 顶部告警横幅 -->
 <div id="alertBanner" class="hidden z-40"></div>
 <!-- 错误横幅 -->
@@ -98,6 +165,14 @@ input::placeholder { color: #94a3b8; }
         <p class="text-[10px] text-slate-400">上次更新</p>
         <p id="lastUpdated" class="text-xs text-slate-600 tabular-nums">—</p>
       </div>
+      <div class="hidden md:block text-right leading-tight">
+        <p class="text-[10px] text-slate-400">当前用户</p>
+        <p id="userName" class="text-xs text-slate-600 font-medium max-w-[120px] truncate">—</p>
+      </div>
+      <button data-action="logout" id="logoutBtn" class="btn-ghost text-sm text-rose-600 flex items-center gap-1" title="退出登录">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        退出
+      </button>
       <button data-action="request-notify" id="notifyBadge" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400" title="桌面通知"></button>
       <button data-action="refresh" id="refreshBtn" class="btn-ghost text-sm text-blue-600 flex items-center gap-1">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -179,6 +254,35 @@ input::placeholder { color: #94a3b8; }
       <button data-action="close-low-balance-modal" class="btn btn-primary flex-1 justify-center">我知道了</button>
       <button data-action="low-balance-details" class="btn flex-1 border border-slate-200 text-slate-600 justify-center">查看详情</button>
     </div>
+  </div>
+</div>
+
+<!-- 修改密码 Modal -->
+<div id="pwdModal" class="fixed inset-0 z-50 modal-overlay flex items-center justify-center hidden" data-action="close-pwd-modal">
+  <div class="bg-white w-full max-w-sm mx-4 rounded-2xl p-6 shadow-2xl" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-5">
+      <h3 class="text-lg font-semibold text-slate-800">修改密码</h3>
+      <button data-action="close-pwd-modal" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    </div>
+    <form id="pwdForm" class="space-y-4">
+      <div>
+        <label class="text-sm text-slate-500 block mb-1.5 font-medium">当前密码</label>
+        <input id="pwdCurrent" type="password" required autocomplete="current-password" placeholder="输入当前密码">
+      </div>
+      <div>
+        <label class="text-sm text-slate-500 block mb-1.5 font-medium">新密码</label>
+        <input id="pwdNew" type="password" required autocomplete="new-password" placeholder="至少 6 位">
+      </div>
+      <div>
+        <label class="text-sm text-slate-500 block mb-1.5 font-medium">确认新密码</label>
+        <input id="pwdNew2" type="password" required autocomplete="new-password" placeholder="再次输入新密码">
+      </div>
+      <p class="text-xs text-slate-400">修改成功后，其他设备将退出登录，当前设备保持登录。</p>
+      <div class="flex gap-3 pt-2">
+        <button type="button" data-action="close-pwd-modal" class="btn flex-1 border border-slate-200 text-slate-600 justify-center">取消</button>
+        <button type="submit" class="btn btn-primary flex-1 justify-center">确认修改</button>
+      </div>
+    </form>
   </div>
 </div>
 

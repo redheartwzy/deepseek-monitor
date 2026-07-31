@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const config = require('../config');
+const { requireAuth } = require('../services/auth');
 const { calculateRate, getLatestGlobalBalance } = require('../services/snapshot');
+const scheduler = require('../scheduler');
+
+router.use(requireAuth);
 
 /** 掩码显示密钥，避免完整 Key 暴露给浏览器 */
 function maskKey(key) {
@@ -31,8 +35,8 @@ function serialize(rows) {
 
 router.get('/', (req, res) => {
   try {
-    const globalBalance = getLatestGlobalBalance();
-    const projects = db.prepare('SELECT * FROM projects ORDER BY is_default DESC, created_at DESC').all();
+    const globalBalance = getLatestGlobalBalance(req.user.id);
+    const projects = db.prepare('SELECT * FROM projects WHERE user_id = ? ORDER BY is_default DESC, created_at DESC').all(req.user.id);
     res.json({
       code: 0,
       data: { projects: serialize(projects), global_balance: globalBalance }
@@ -51,20 +55,23 @@ router.post('/', (req, res) => {
     }
     const asDefault = is_default ? 1 : 0;
     const tx = db.transaction(() => {
-      if (asDefault) db.prepare('UPDATE projects SET is_default = 0').run();
+      if (asDefault) db.prepare('UPDATE projects SET is_default = 0 WHERE user_id = ?').run(req.user.id);
       const result = db.prepare(`
-        INSERT INTO projects (name, api_key, balance_threshold, rate_threshold, is_default)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO projects (name, api_key, balance_threshold, rate_threshold, is_default, user_id)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         name,
         api_key,
         balance_threshold ?? config.defaults.balanceThreshold,
         rate_threshold ?? config.defaults.rateThreshold,
-        asDefault
+        asDefault,
+        req.user.id
       );
       return result.lastInsertRowid;
     });
     res.json({ code: 0, data: { id: tx() }, message: '创建成功' });
+    // 立即拉取一次余额，避免新密钥要等下一个轮询周期才显示
+    scheduler.requestPoll();
   } catch (err) {
     console.error('[Projects] 创建失败:', err.message);
     res.status(500).json({ code: 1, message: '创建失败' });
@@ -87,15 +94,17 @@ router.put('/:id', (req, res) => {
     }
 
     const tx = db.transaction(() => {
-      if (is_default) db.prepare('UPDATE projects SET is_default = 0').run();
-      values.push(req.params.id);
-      const result = db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+      if (is_default) db.prepare('UPDATE projects SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+      values.push(req.params.id, req.user.id);
+      const result = db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...values);
       return result.changes;
     });
 
     const changes = tx();
     if (!changes) return res.status(404).json({ code: 1, message: '项目不存在' });
     res.json({ code: 0, message: '更新成功' });
+    // 改密钥 / 改启用状态后立即刷新，阈值 / 速率变更无需（但无妨）
+    scheduler.requestPoll();
   } catch (err) {
     console.error('[Projects] 更新失败:', err.message);
     res.status(500).json({ code: 1, message: '更新失败' });
@@ -104,14 +113,14 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    const target = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+    const target = db.prepare('SELECT * FROM projects WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
     if (!target) return res.status(404).json({ code: 1, message: '项目不存在' });
 
     const tx = db.transaction(() => {
-      db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
-      // 若删除的是默认密钥，自动推选最新一条为默认
+      db.prepare('DELETE FROM projects WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id);
+      // 若删除的是默认密钥，自动推选该用户最新一条为默认
       if (target.is_default) {
-        const next = db.prepare('SELECT id FROM projects ORDER BY created_at DESC LIMIT 1').get();
+        const next = db.prepare('SELECT id FROM projects WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(req.user.id);
         if (next) db.prepare('UPDATE projects SET is_default = 1 WHERE id = ?').run(next.id);
       }
     });

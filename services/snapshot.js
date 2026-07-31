@@ -1,40 +1,43 @@
 const db = require('../db');
 
-// ===== 全局余额快照 =====
+// ===== 全局余额快照（按用户隔离）=====
 
-function saveGlobalSnapshot(balance) {
+function saveGlobalSnapshot(userId, balance) {
   try {
-    return db.prepare('INSERT INTO global_snapshots (balance) VALUES (?)').run(balance);
+    return db.prepare('INSERT INTO global_snapshots (user_id, balance) VALUES (?, ?)').run(userId, balance);
   } catch (err) {
     console.error('[Snapshot] 保存全局快照失败:', err.message);
     return null;
   }
 }
 
-function getGlobalSnapshots(days = 7) {
+function getGlobalSnapshots(userId, days = 7) {
   try {
     return db.prepare(`
       SELECT balance, fetched_at FROM global_snapshots
-      WHERE fetched_at >= datetime('now', ?)
+      WHERE user_id = ? AND fetched_at >= datetime('now', ?)
       ORDER BY fetched_at ASC
-    `).all(`-${days} days`);
+    `).all(userId, `-${days} days`);
   } catch (err) {
     console.error('[Snapshot] 查询全局快照失败:', err.message);
     return [];
   }
 }
 
-function getLatestGlobalBalance() {
+function getLatestGlobalBalance(userId) {
   try {
     // 无快照时返回 null（表示“尚未拉取”），避免把 ¥0.00 误当真实余额
-    return db.prepare('SELECT balance FROM global_snapshots ORDER BY fetched_at DESC LIMIT 1').pluck().get() ?? null;
+    return db.prepare(`
+      SELECT balance FROM global_snapshots
+      WHERE user_id = ? ORDER BY fetched_at DESC LIMIT 1
+    `).get(userId)?.balance ?? null;
   } catch (err) {
     console.error('[Snapshot] 查询最新余额失败:', err.message);
     return null;
   }
 }
 
-// ===== 单项目消耗追踪 =====
+// ===== 单项目消耗追踪（项目已关联 user_id，无需额外传参）=====
 
 function saveProjectSnapshot(projectId, balance) {
   try {
@@ -75,10 +78,11 @@ function calculateRate(projectId, days = 7) {
   }
 }
 
-// ===== 模块二：用量明细 =====
+// ===== 模块二：用量明细（按用户隔离）=====
 
 /**
- * 写入一条按 (date, model, source) 去重的用量行。
+ * 写入一条按 (user_id, date, model, source) 去重的用量行。
+ * @param {number} userId
  * @param {string} date   YYYY-MM-DD
  * @param {string} model
  * @param {number|null} requests
@@ -86,38 +90,38 @@ function calculateRate(projectId, days = 7) {
  * @param {number} cost
  * @param {'api'|'derived'} source
  */
-function saveUsageSnapshot(date, model, requests, tokens, cost, source = 'api') {
+function saveUsageSnapshot(userId, date, model, requests, tokens, cost, source = 'api') {
   try {
     return db.prepare(`
-      INSERT OR REPLACE INTO usage_snapshots (date, model, requests, tokens, cost, source)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(date, model, requests, tokens, cost, source);
+      INSERT OR REPLACE INTO usage_snapshots (user_id, date, model, requests, tokens, cost, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, date, model, requests, tokens, cost, source);
   } catch (err) {
     console.error('[Snapshot] 保存用量失败:', err.message);
     return null;
   }
 }
 
-function getUsageSnapshots(days = 7) {
+function getUsageSnapshots(userId, days = 7) {
   try {
     return db.prepare(`
       SELECT * FROM usage_snapshots
-      WHERE date >= date('now', ?)
+      WHERE user_id = ? AND date >= date('now', ?)
       ORDER BY date ASC, model ASC
-    `).all(`-${days + 1} days`);
+    `).all(userId, `-${days + 1} days`);
   } catch (err) {
     console.error('[Snapshot] 查询用量失败:', err.message);
     return [];
   }
 }
 
-function getModelsFromUsage(days = 7) {
+function getModelsFromUsage(userId, days = 7) {
   try {
     return db.prepare(`
       SELECT DISTINCT model FROM usage_snapshots
-      WHERE date >= date('now', ?)
+      WHERE user_id = ? AND date >= date('now', ?)
       ORDER BY model ASC
-    `).all(`-${days + 1} days`).map(r => r.model);
+    `).all(userId, `-${days + 1} days`).map(r => r.model);
   } catch (err) {
     console.error('[Snapshot] 查询模型列表失败:', err.message);
     return [];
@@ -125,13 +129,13 @@ function getModelsFromUsage(days = 7) {
 }
 
 /**
- * 从全局余额快照推导每日消费（DeepSeek 未公开用量接口时的降级方案）。
+ * 从该用户的全局余额快照推导每日消费（DeepSeek 未公开用量接口时的降级方案）。
  * 每日消费 = 当日首个快照余额 - 当日末个快照余额（充值导致上升则记为 0）。
  * 结果直接写入 usage_snapshots（model='全部', source='derived', requests/tokens 为 null）。
  */
-function deriveDailySpendFromSnapshots(days = 7) {
+function deriveDailySpendFromSnapshots(userId, days = 7) {
   try {
-    const rows = getGlobalSnapshots(days);
+    const rows = getGlobalSnapshots(userId, days);
     if (rows.length < 2) return [];
 
     const byDay = new Map();
@@ -146,7 +150,7 @@ function deriveDailySpendFromSnapshots(days = 7) {
       snaps.sort((a, b) => a.ts - b.ts);
       const spend = Math.max(0, snaps[0].balance - snaps[snaps.length - 1].balance);
       if (spend > 0) {
-        saveUsageSnapshot(day, '全部', null, null, Math.round(spend * 10000) / 10000, 'derived');
+        saveUsageSnapshot(userId, day, '全部', null, null, Math.round(spend * 10000) / 10000, 'derived');
         out.push({ date: day, cost: Math.round(spend * 10000) / 10000 });
       }
     }
@@ -161,11 +165,11 @@ function deriveDailySpendFromSnapshots(days = 7) {
  * 消费趋势摘要（用于邮件告警内容）。
  * @returns {{totalCost:number, avgDailyCost:number, dayCount:number}}
  */
-function getConsumptionSummary(days = 7) {
-  const derived = deriveDailySpendFromSnapshots(days);
+function getConsumptionSummary(userId, days = 7) {
+  const derived = deriveDailySpendFromSnapshots(userId, days);
   if (!derived.length) {
     // 无快照可推导时退化为用全部用量表（含 api 来源）
-    const rows = getUsageSnapshots(days);
+    const rows = getUsageSnapshots(userId, days);
     const total = rows.reduce((s, r) => s + (r.cost || 0), 0);
     return { totalCost: Math.round(total * 100) / 100, avgDailyCost: 0, dayCount: 0 };
   }

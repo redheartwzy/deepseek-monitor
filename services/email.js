@@ -10,12 +10,12 @@ const config = require('../config');
 const { getConsumptionSummary } = require('./snapshot');
 
 function isConfigured() {
+  // 收件人取自各用户的注册邮箱，故此处只需 SMTP 凭据完整
   return Boolean(
     config.email.enabled &&
     config.email.host &&
     config.email.user &&
-    config.email.pass &&
-    config.email.recipient
+    config.email.pass
   );
 }
 
@@ -87,23 +87,25 @@ async function sendLowBalanceEmail(p) {
   if (!isConfigured()) {
     console.warn(
       '[Email] SMTP 未配置，跳过邮件发送。' +
-      '请设置 EMAIL_ENABLED=true 及 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_RECIPIENT。' +
-      '免费测试可用 Ethereal (https://ethereal.email)，或使用 QQ 邮箱授权码。'
+      '请设置 EMAIL_ENABLED=true 及 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS，收件人取自用户注册邮箱。'
     );
     return false;
   }
   if (p.last_balance == null) return false;
+  // 收件人 = 密钥所属用户注册邮箱；未填邮箱的用户不发送
+  const owner = db.prepare('SELECT email FROM users WHERE id = ?').get(p.user_id);
+  if (!owner || !owner.email) return false;
   if (hasRecentEmail(p.id, 'low_balance', 24)) return false;
 
   const threshold = p.balance_threshold ?? config.defaults.balanceThreshold;
-  const summary = getConsumptionSummary(7);
+  const summary = getConsumptionSummary(p.user_id, 7);
   const transporter = createTransport();
   const u = urgencyLevel(p.last_balance, threshold);
 
   try {
     await transporter.sendMail({
       from: config.email.from,
-      to: config.email.recipient,
+      to: owner.email,
       subject: `${config.email.subjectPrefix} ${u.label} ${p.name} 余额 ¥${Number(p.last_balance).toFixed(2)}`,
       html: buildHtml({ name: p.name, balance: p.last_balance, threshold, summary })
     });
@@ -133,7 +135,7 @@ function startEmailScheduler() {
   }
   if (!isConfigured()) {
     console.warn('[Email] EMAIL_ENABLED=true 但 SMTP 参数不完整，邮件告警未启动。' +
-      '请配置 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/EMAIL_RECIPIENT');
+      '请配置 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS（收件人取自用户注册邮箱）');
     return;
   }
 
@@ -141,7 +143,7 @@ function startEmailScheduler() {
   const job = schedule.scheduleJob(config.email.cron, () => {
     runEmailCheck().catch(err => console.error('[Email] 定时检查异常:', err.message));
   });
-  console.log(`[Email] 邮件告警已启动，cron=${config.email.cron}，收件人=${config.email.recipient}`);
+  console.log(`[Email] 邮件告警已启动，cron=${config.email.cron}（收件人为各用户注册邮箱）`);
 
   // 启动后立即做一次检查，尽早发现低余额
   setTimeout(() => runEmailCheck().catch(() => {}), 8000);

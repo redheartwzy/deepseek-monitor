@@ -1,8 +1,10 @@
 const express = require('express');
 const config = require('./config');
+const authRouter = require('./routes/auth');
 const projectsRouter = require('./routes/projects');
 const dataRouter = require('./routes/data');
 const scheduler = require('./scheduler');
+const { requireAuth, cleanupSessions } = require('./services/auth');
 const { startEmailScheduler, isConfigured } = require('./services/email');
 
 const app = express();
@@ -18,15 +20,19 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/api/projects', projectsRouter);
-app.use('/api/data', dataRouter);
+// 登录系统：认证相关接口放行，其余业务接口均需登录
+app.use('/api/auth', authRouter);
+
+// 需要登录才能访问的业务接口（projects / data / config）
+app.use('/api/projects', requireAuth, projectsRouter);
+app.use('/api/data', requireAuth, dataRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ code: 0, message: 'ok' });
 });
 
 // 模块一：向浏览器暴露安全的运行配置（不含任何密钥 / SMTP 口令）
-app.get('/api/config', (req, res) => {
+app.get('/api/config', requireAuth, (req, res) => {
   res.json({
     code: 0,
     data: {
@@ -37,6 +43,7 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+cleanupSessions();
 scheduler.start();
 startEmailScheduler();
 

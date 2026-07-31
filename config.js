@@ -1,7 +1,22 @@
 /**
  * DeepSeek Monitor 全局配置
  * 所有配置均可通过环境变量覆盖，兼容 Railway / Docker / 本地运行。
+ * 本地开发时支持根目录 .env 文件（已 gitignore），已存在的环境变量优先。
  */
+
+const fs = require('fs');
+const path = require('path');
+try {
+  const envFile = path.join(__dirname, '.env');
+  if (fs.existsSync(envFile)) {
+    for (const line of fs.readFileSync(envFile, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (m && m[1] && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      }
+    }
+  }
+} catch { /* .env 解析失败时忽略 */ }
 
 const toFloat = (v, dflt) => {
   const n = parseFloat(v);
@@ -33,6 +48,10 @@ const config = {
   pollIntervalMin: toInt(process.env.POLL_INTERVAL_MIN, 5),
   // 前端页面刷新数据的间隔（毫秒），供 GET /api/config 下发给浏览器
   refreshIntervalMs: toInt(process.env.REFRESH_INTERVAL, 60000),
+
+  // ===== 登录系统 =====
+  // Session 有效期（天），cookie 与数据库 sessions 表共用
+  sessionDays: toInt(process.env.SESSION_DAYS, 7),
 
   // ===== 告警阈值 =====
   // 全局余额告警阈值（账号维度）。BALANCE_THRESHOLD 为新名字，GLOBAL_BALANCE_THRESHOLD 为旧名别名
@@ -75,7 +94,7 @@ config.publicConfig = {
   balanceThreshold: config.globalBalanceThreshold,
   emailEnabled: config.email.enabled,
   emailConfigured: Boolean(
-    config.email.enabled && config.email.host && config.email.user && config.email.recipient
+    config.email.enabled && config.email.host && config.email.user && config.email.pass
   ),
   usageConfigured: Boolean(config.deepseekUsageEndpoint)
 };

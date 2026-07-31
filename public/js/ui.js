@@ -70,10 +70,16 @@ export function showError(err) {
     </div>`;
 }
 
-/** 顶部栏：上次更新时间 + 刷新按钮状态 + 缓存提示 */
+/** 顶部栏：上次更新时间 + 刷新按钮状态 + 缓存提示 + 当前用户 */
 export function updateHeader(state) {
   const lastEl = $('lastUpdated');
   if (lastEl) lastEl.textContent = state.lastUpdated ? fmtTime(state.lastUpdated) : '—';
+
+  const userEl = $('userName');
+  if (userEl) {
+    const u = state.user;
+    userEl.textContent = (u && (u.display_name || u.username)) || '—';
+  }
 
   const btn = $('refreshBtn');
   if (btn) {
@@ -244,6 +250,9 @@ function renderManagement(state, el) {
     ? '<span class="badge bg-emerald-50 text-emerald-700 border border-emerald-200">已启用</span>'
     : '<span class="badge bg-slate-50 text-slate-500 border border-slate-200">未配置</span>';
 
+  const u = state.user || {};
+  const userLine = `${esc(u.display_name || u.username || '')}${u.email ? ` · ${esc(u.email)}` : ''}`;
+
   el.innerHTML = `
     <div class="fade-in space-y-4">
       <button data-action="open-key-form" class="btn btn-primary w-full flex items-center justify-center gap-2 py-3">
@@ -257,6 +266,14 @@ function renderManagement(state, el) {
           <p class="text-xs">余额低于阈值时每小时发送提醒邮件</p>
         </div>
         ${emailStatus}
+      </div>
+
+      <div class="card text-sm text-slate-500 flex items-center justify-between">
+        <div class="min-w-0">
+          <p class="font-semibold text-slate-800 text-sm mb-0.5">账号安全</p>
+          <p class="text-xs truncate">当前用户：${userLine || '—'}</p>
+        </div>
+        <button data-action="open-pwd-modal" class="btn btn-primary !py-2 !px-4 text-sm whitespace-nowrap">修改密码</button>
       </div>
 
       <div class="space-y-3">

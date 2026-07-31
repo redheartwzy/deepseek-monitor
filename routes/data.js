@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../db');
+const { requireAuth } = require('../services/auth');
 const { getProjectSnapshots, getGlobalSnapshots, getLatestGlobalBalance, getUsageSnapshots, getModelsFromUsage, deriveDailySpendFromSnapshots } = require('../services/snapshot');
 const { getUnacknowledged, acknowledge } = require('../services/alert');
+
+router.use(requireAuth);
 
 const round2 = n => Math.round(n * 100) / 100;
 
@@ -21,15 +25,15 @@ function summarize(daily, models) {
 }
 
 /**
- * 汇总用量数据。
+ * 汇总该用户的用量数据。
  *  - source='derived'（余额快照推导）→ 权威的每日“全部”消费；
  *  - source='api'（DEEPSEEK_USAGE_ENDPOINT）→ 分模型明细，含 requests / tokens。
  * 指定 model 时仅返回该模型的 api 行；否则返回“全部”序列（优先派生值）。
  */
-function buildUsage(days, modelFilter) {
-  deriveDailySpendFromSnapshots(days); // 幂等 upsert，保证最新派生数据
-  const rows = getUsageSnapshots(days);
-  const models = ['全部', ...getModelsFromUsage(days).filter(m => m !== '全部')];
+function buildUsage(userId, days, modelFilter) {
+  deriveDailySpendFromSnapshots(userId, days); // 幂等 upsert，保证最新派生数据
+  const rows = getUsageSnapshots(userId, days);
+  const models = ['全部', ...getModelsFromUsage(userId, days).filter(m => m !== '全部')];
 
   const derivedMap = {};
   const apiByKey = {};
@@ -77,9 +81,12 @@ function buildUsage(days, modelFilter) {
   return summarize(daily, models);
 }
 
+/** 校验快照归属：仅返回属于当前用户的项目快照 */
 router.get('/snapshots/:projectId', (req, res) => {
   try {
     const days = parseInt(req.query.days) || 7;
+    const project = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(req.params.projectId, req.user.id);
+    if (!project) return res.status(404).json({ code: 1, message: '项目不存在' });
     res.json({ code: 0, data: getProjectSnapshots(req.params.projectId, days) });
   } catch (err) {
     console.error('[Data] 查询快照失败:', err.message);
@@ -90,8 +97,8 @@ router.get('/snapshots/:projectId', (req, res) => {
 router.get('/global-balance', (req, res) => {
   try {
     const days = parseInt(req.query.days) || 7;
-    const balance = getLatestGlobalBalance();
-    const history = getGlobalSnapshots(days);
+    const balance = getLatestGlobalBalance(req.user.id);
+    const history = getGlobalSnapshots(req.user.id, days);
     res.json({ code: 0, data: { balance, history } });
   } catch (err) {
     console.error('[Data] 查询全局余额失败:', err.message);
@@ -104,7 +111,7 @@ router.get('/usage', (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days) || 7, 365);
     const model = req.query.model || '全部';
-    res.json({ code: 0, data: buildUsage(days, model) });
+    res.json({ code: 0, data: buildUsage(req.user.id, days, model) });
   } catch (err) {
     console.error('[Data] 查询用量失败:', err.message);
     res.status(500).json({ code: 1, message: '查询用量失败' });
@@ -113,7 +120,7 @@ router.get('/usage', (req, res) => {
 
 router.get('/alerts', (req, res) => {
   try {
-    res.json({ code: 0, data: getUnacknowledged() });
+    res.json({ code: 0, data: getUnacknowledged(req.user.id) });
   } catch (err) {
     console.error('[Data] 查询告警失败:', err.message);
     res.status(500).json({ code: 1, message: '查询告警失败' });
@@ -122,7 +129,7 @@ router.get('/alerts', (req, res) => {
 
 router.put('/alerts/:id/ack', (req, res) => {
   try {
-    const result = acknowledge(req.params.id);
+    const result = acknowledge(req.params.id, req.user.id);
     if (!result || !result.changes) {
       return res.status(404).json({ code: 1, message: '告警不存在' });
     }

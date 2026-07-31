@@ -31,7 +31,12 @@ function migrate() {
     { table: 'projects', column: 'is_default',      sql: 'ALTER TABLE projects ADD COLUMN is_default INTEGER DEFAULT 0' },
     { table: 'projects', column: 'last_balance',    sql: 'ALTER TABLE projects ADD COLUMN last_balance REAL' },
     { table: 'projects', column: 'last_fetched_at', sql: 'ALTER TABLE projects ADD COLUMN last_fetched_at TEXT' },
-    { table: 'projects', column: 'last_error',      sql: 'ALTER TABLE projects ADD COLUMN last_error TEXT' }
+    { table: 'projects', column: 'last_error',      sql: 'ALTER TABLE projects ADD COLUMN last_error TEXT' },
+    // 多用户：数据按 user_id 隔离
+    { table: 'projects',         column: 'user_id', sql: 'ALTER TABLE projects ADD COLUMN user_id INTEGER' },
+    { table: 'global_snapshots', column: 'user_id', sql: 'ALTER TABLE global_snapshots ADD COLUMN user_id INTEGER' },
+    { table: 'alerts',           column: 'user_id', sql: 'ALTER TABLE alerts ADD COLUMN user_id INTEGER' },
+    { table: 'usage_snapshots',  column: 'user_id', sql: 'ALTER TABLE usage_snapshots ADD COLUMN user_id INTEGER' }
   ];
 
   for (const m of migrations) {
@@ -43,10 +48,65 @@ function migrate() {
       console.warn(`[DB] 迁移跳过 ${m.table}.${m.column}: ${err.message}`);
     }
   }
+
+  // usage_snapshots 原 UNIQUE(date, model, source) 是全局唯一的，
+  // 多用户下会互相冲突。若该表已存在但唯一约束未含 user_id，则重建表。
+  // （该表是“派生数据”，每次轮询会重新写入，重建无数据损失。）
+  if (hasColumn('usage_snapshots', 'user_id')) {
+    const uniq = db.prepare(`
+      SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'sqlite_autoindex_usage_snapshots_1'
+    `).get();
+    if (uniq && /\(date, model, source\)/.test(uniq.sql)) {
+      try {
+        db.exec(`
+          DROP TABLE IF EXISTS usage_snapshots;
+          CREATE TABLE usage_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            date TEXT NOT NULL,
+            model TEXT NOT NULL,
+            requests INTEGER,
+            tokens INTEGER,
+            cost REAL NOT NULL,
+            source TEXT DEFAULT 'api',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, date, model, source)
+          );
+        `);
+        console.log('[DB] 迁移: 重建 usage_snapshots（唯一约束加入 user_id）');
+      } catch (err) {
+        console.warn(`[DB] usage_snapshots 重建失败: ${err.message}`);
+      }
+    }
+  }
 }
 
 function initTables() {
   const sql = `
+    -- 登录系统：用户与 Session
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      display_name TEXT,
+      personal_info TEXT,
+      email TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_login_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
     CREATE TABLE IF NOT EXISTS projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
